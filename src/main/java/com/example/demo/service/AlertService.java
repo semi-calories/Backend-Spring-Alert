@@ -4,6 +4,10 @@ import com.example.demo.domain.Alert.AlertRecord;
 import com.example.demo.domain.Alert.AlertSetting;
 import com.example.demo.dto.Alert.Request.RequestUpdateAlertSettingDto;
 import com.example.demo.dto.Recommend.RecommendDto;
+import com.example.demo.dto.Recommend.request.RequestRecommendAPIDto;
+import com.example.demo.dto.Recommend.response.ResponseRecommendDto;
+import com.example.demo.dto.Recommend.response.ResponseRecommendListDto;
+import com.example.demo.feign.MainServerFeign;
 import com.example.demo.repository.AlertRecordRepository;
 import com.example.demo.repository.AlertSettingRepository;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +32,7 @@ public class AlertService {
     private final AlertRecordRepository alertRecordRepository;
     private final AlertRecordService alertRecordService;
     private final DBService dbService;
+    private final MainServerFeign mainServerFeign;
 
     /**
      * 푸시 알람 수신 허용
@@ -45,8 +50,8 @@ public class AlertService {
      * 유저 설정 단건 검색
      */
     public AlertSetting findOne(Long userCode){
-        return alertSettingRepository.findByUserCode(userCode)
-                .orElseThrow(() -> new IllegalStateException("존재하지 않는 설정입니다."));
+        return alertSettingRepository.findByUserCode(userCode).get();
+//                .orElseThrow(() -> new IllegalStateException("존재하지 않는 설정입니다."));
     }
 
     /**
@@ -59,14 +64,14 @@ public class AlertService {
         // Alert Record 수정 비즈니스 로직
 
         // 시간대만 수정일 때
-        if(requestUpdateAlertSettingDto.isSetting() == alertSetting.isSetting()){
+        if(requestUpdateAlertSettingDto.isSetting() == alertSetting.isSetting()) {
             // 현재 시간부터 다음날 23:59까지 발송되지 않은 모든 Alert Record
             List<AlertRecord> alertRecordList = alertRecordRepository.findAllByUserCodeAndAlertStatusWithAlertDateBetween(requestUpdateAlertSettingDto.getUserCode(), false,
                     getNowLocalDate(), getTomorrowDateTime(23, 59));
             // Alert Record 발송 시간 변경
             changeAllTime(alertRecordList, requestUpdateAlertSettingDto);
         } else {
-            
+
             if(requestUpdateAlertSettingDto.isSetting()){
                 // off -> on 일 때
                 // 한국 시간대 설정
@@ -88,30 +93,30 @@ public class AlertService {
 
                 if (currentKoreanTime.isBefore(targetBreakfast)){
                     // 현재 시간이 아침 발송 시간 전일 경우
-                    RecommendDto recommend = requestPushRecommend(requestUpdateAlertSettingDto.getUserCode(), 1).get(0);
+                    ResponseRecommendDto recommendDto = requestPushRecommend(requestUpdateAlertSettingDto.getUserCode(), 1).getRecommendList().get(0);
                     alertRecordRepository.save(new AlertRecord(user, requestUpdateAlertSettingDto.getUserToken(),
                             getTodayDateTime(requestUpdateAlertSettingDto.getBreakfastHour(), requestUpdateAlertSettingDto.getBreakfastMinute()), requestUpdateAlertSettingDto.getBreakfastHour(), requestUpdateAlertSettingDto.getBreakfastMinute(),
-                            1, dbService.findOne(Long.valueOf(recommend.getFoodCode())),
-                            recommend.getFoodName(), recommend.getFoodKcal(),
-                            recommend.getFoodCarbon(), recommend.getFoodProtein(), recommend.getFoodFat()));
+                            1, dbService.findOne(Long.valueOf(recommendDto.getFoodCode())),
+                            recommendDto.getFoodName(), recommendDto.getFoodKcal(),
+                            recommendDto.getFoodCarbon(), recommendDto.getFoodProtein(), recommendDto.getFoodFat()));
                 }
                 if (currentKoreanTime.isBefore(targetlunch)){
                     // 현재 시간이 점심 발송 시간 전일 경우
-                    RecommendDto recommend = requestPushRecommend(requestUpdateAlertSettingDto.getUserCode(), 2).get(0);
+                    ResponseRecommendDto recommendDto = requestPushRecommend(requestUpdateAlertSettingDto.getUserCode(), 2).getRecommendList().get(0);
                     alertRecordRepository.save(new AlertRecord(user, requestUpdateAlertSettingDto.getUserToken(),
                             getTodayDateTime(requestUpdateAlertSettingDto.getBreakfastHour(), requestUpdateAlertSettingDto.getBreakfastMinute()), requestUpdateAlertSettingDto.getBreakfastHour(), requestUpdateAlertSettingDto.getBreakfastMinute(),
-                            2, dbService.findOne(Long.valueOf(recommend.getFoodCode())),
-                            recommend.getFoodName(), recommend.getFoodKcal(),
-                            recommend.getFoodCarbon(), recommend.getFoodProtein(), recommend.getFoodFat()));
+                            2, dbService.findOne(Long.valueOf(recommendDto.getFoodCode())),
+                            recommendDto.getFoodName(), recommendDto.getFoodKcal(),
+                            recommendDto.getFoodCarbon(), recommendDto.getFoodProtein(), recommendDto.getFoodFat()));
                 }
                 if (currentKoreanTime.isBefore(targetDinner)){
                     // 현재 시간이 저녁 발송 시간 전일 경우
-                    RecommendDto recommend = requestPushRecommend(requestUpdateAlertSettingDto.getUserCode(), 3).get(0);
+                    ResponseRecommendDto recommendDto = requestPushRecommend(requestUpdateAlertSettingDto.getUserCode(), 2).getRecommendList().get(0);
                     alertRecordRepository.save(new AlertRecord(user, requestUpdateAlertSettingDto.getUserToken(),
                             getTodayDateTime(requestUpdateAlertSettingDto.getBreakfastHour(), requestUpdateAlertSettingDto.getBreakfastMinute()), requestUpdateAlertSettingDto.getBreakfastHour(), requestUpdateAlertSettingDto.getBreakfastMinute(),
-                            3, dbService.findOne(Long.valueOf(recommend.getFoodCode())),
-                            recommend.getFoodName(), recommend.getFoodKcal(),
-                            recommend.getFoodCarbon(), recommend.getFoodProtein(), recommend.getFoodFat()));
+                            3, dbService.findOne(Long.valueOf(recommendDto.getFoodCode())),
+                            recommendDto.getFoodName(), recommendDto.getFoodKcal(),
+                            recommendDto.getFoodCarbon(), recommendDto.getFoodProtein(), recommendDto.getFoodFat()));
                 }
 
                 // 현재 시간이 20시 00분 후일 경우
@@ -138,25 +143,21 @@ public class AlertService {
                 requestUpdateAlertSettingDto.getDinnerHour(), requestUpdateAlertSettingDto.getDinnerMinute());
         return alertSetting;
     }
+
     public void changeAllTime(List<AlertRecord> alertRecordList, RequestUpdateAlertSettingDto requestUpdateAlertSettingDto){
         for(int i = 0; i < alertRecordList.size(); i++){
             AlertRecord alertRecord = alertRecordList.get(i);
             if(alertRecord.getFoodTimes() == 1){
-                int newHour = requestUpdateAlertSettingDto.getBreakfastHour();
-                int newMinute = requestUpdateAlertSettingDto.getBreakfastMinute();
-                alertRecord.changeTime(getModified(alertRecord.getAlertDate(), newHour, newMinute), newHour, newMinute);
+                alertRecord.changeTime(getModified(alertRecord.getAlertDate(), requestUpdateAlertSettingDto.getBreakfastHour(), requestUpdateAlertSettingDto.getBreakfastMinute()), requestUpdateAlertSettingDto.getBreakfastHour(), requestUpdateAlertSettingDto.getBreakfastMinute());
             }
             if(alertRecord.getFoodTimes() == 2){
-                int newHour = requestUpdateAlertSettingDto.getLunchHour();
-                int newMinute = requestUpdateAlertSettingDto.getLunchMinute();
-                alertRecord.changeTime(getModified(alertRecord.getAlertDate(), newHour, newMinute), newHour, newMinute);
+                alertRecord.changeTime(getModified(alertRecord.getAlertDate(), requestUpdateAlertSettingDto.getLunchHour(), requestUpdateAlertSettingDto.getLunchMinute()), requestUpdateAlertSettingDto.getLunchHour(), requestUpdateAlertSettingDto.getLunchMinute());
             }
             if(alertRecord.getFoodTimes() == 3){
-                int newHour = requestUpdateAlertSettingDto.getDinnerHour();
-                int newMinute = requestUpdateAlertSettingDto.getDinnerMinute();
-                alertRecord.changeTime(getModified(alertRecord.getAlertDate(), newHour, newMinute), newHour, newMinute);
+                alertRecord.changeTime(getModified(alertRecord.getAlertDate(), requestUpdateAlertSettingDto.getDinnerHour(), requestUpdateAlertSettingDto.getDinnerMinute()), requestUpdateAlertSettingDto.getDinnerHour(), requestUpdateAlertSettingDto.getDinnerMinute());
             }
         }
+
     }
 
     public String getNowLocalDate(){
@@ -232,40 +233,12 @@ public class AlertService {
         return alertRecordList;
     }
 
-    public List<RecommendDto> requestPushRecommend(Long UserCode, int eatTimes) {
+    public ResponseRecommendListDto requestPushRecommend(Long userCode, int eatTimes) {
 
-        // DB에서 해당 정보 가져옴
-        // 유저 목표 및 유저 조회
-        UserGoal user = userService.findUserWithUserGoal(UserCode);
-
-        // 유저 선호, 비선호, 기록 조회
-        List<UserDietPrefer> preferDiet = dietService.findPreferByUserCode(UserCode);
-        List<UserDietDislike> dislikeDiet = dietService.findDislikeByUserCode(UserCode);
-        List<DietRecord> dietRecords = dietService.findDietRecordByUserCodeAndDate(UserCode, LocalDate.now());
-
-
-        // FASTAPI 서버에 api 요청
-        RequestRecommendAPIDto requestRecommendAPIDto =
-                new RequestRecommendAPIDto(user, eatTimes, preferDiet, dislikeDiet, dietRecords);
-
-        ResponseRecommendAPIDto responseAPIDto = fastApiFeign.requestRecommend(requestRecommendAPIDto);
-
-        // FASTAPI 응답 DTO로 list별로 음식 접근가능케 함 (fast api: 인덱스별로 접근)
-        List<RecommendDto> recommendDtoList = IntStream.range(0, responseAPIDto.getFoodCodeList().size()) // 음식 추천 수만큼 반복
-                .mapToObj(i -> new RecommendDto(
-                        responseAPIDto.getFoodCodeList().get(i),
-                        responseAPIDto.getFoodNameList().get(i),
-                        responseAPIDto.getFoodMainCategoryList().get(i),
-                        responseAPIDto.getFoodDetailedClassificationList().get(i),
-                        responseAPIDto.getFoodWeightList().get(i),
-                        responseAPIDto.getFoodKcalList().get(i),
-                        responseAPIDto.getFoodCarbonList().get(i),
-                        responseAPIDto.getFoodProteinList().get(i),
-                        responseAPIDto.getFoodFatList().get(i)
-                ))
-                .collect(Collectors.toList());
+        RequestRecommendAPIDto requestRecommendAPIDto = new RequestRecommendAPIDto(userCode, eatTimes);
+        ResponseRecommendListDto responseRecommendListDto = mainServerFeign.requestRecommend(requestRecommendAPIDto);
 
         // 응답 DTO 생성 및 return
-        return recommendDtoList;
+        return responseRecommendListDto;
     }
 }

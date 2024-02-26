@@ -29,7 +29,6 @@ public class AlertRecordService {
     private final AlertSettingRepository alertSettingRepository;
     private final AlertRecordRepository alertRecordRepository;
 
-//    private final FastApiFeign fastApiFeign;
 //    private final DietService dietService;
     private final DBService dbService;
 

@@ -12,7 +12,7 @@ public interface AlertSettingRepository extends JpaRepository<AlertSetting, Long
     /**
      * 조회 by user code
      */
-    @Query("select alertSet from AlertSetting alertSet left join fetch alertSet.userCode where  alertSet.userCode = :userCode ")
+//    @Query("select alertSet from AlertSetting alertSet where  alertSet.userCode = :userCode ")
     Optional<AlertSetting> findByUserCode(@Param("userCode") Long userCode);
 
     /**
